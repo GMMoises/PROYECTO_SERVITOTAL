@@ -1,0 +1,115 @@
+name: ServiTotal CI CD
+
+on:
+  push:
+    branches: [main, master, DOCKERCICD]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: servitotal-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  verificar-publicar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    services:
+      postgres:
+        image: postgres:16-bookworm
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: servitotal
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres -d servitotal"
+          --health-interval 5s --health-timeout 5s --health-retries 20
+    env:
+      DATABASE_HOST: 127.0.0.1
+      DATABASE_PORT: '5432'
+      DATABASE_NAME: servitotal
+      DATABASE_USER: postgres
+      DATABASE_PASSWORD: postgres
+      JWT_SECRET: clave-exclusiva-de-ci-no-utilizar-en-produccion-123456
+      ALMACEN_OBJETOS_RAIZ: ${{ runner.temp }}/evidencias
+    outputs:
+      image: ${{ steps.publicar.outputs.image }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+      - name: Instalar dependencias
+        run: npm ci --ignore-scripts --no-audit --no-fund
+      - name: Comprobar tipos y compilar API y panel
+        run: |
+          npm run verificar-tipos
+          npm run construir
+          npm run construir --workspace panel
+      - name: Pruebas del servidor con PostgreSQL aislado
+        run: npm run prueba
+      - name: Pruebas del panel
+        run: npm run prueba:panel
+      - name: Construir imagen
+        run: docker build --tag servitotal:test .
+      - name: Probar contenedor con migraciones y persistencia
+        run: |
+          docker run --detach --name servitotal-ci --network host \
+            --env DATABASE_HOST --env DATABASE_PORT --env DATABASE_NAME \
+            --env DATABASE_USER --env DATABASE_PASSWORD --env JWT_SECRET \
+            servitotal:test
+          node scripts/comprobar-despliegue.mjs http://127.0.0.1:3000
+      - name: Logs si falla
+        if: failure()
+        run: docker logs servitotal-ci || true
+      - name: Publicar la misma imagen verificada en GHCR
+        id: publicar
+        if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
+        env:
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          IMAGE="ghcr.io/${GITHUB_REPOSITORY,,}"
+          printf '%s' "$GHCR_TOKEN" | docker login ghcr.io --username "$GITHUB_ACTOR" --password-stdin
+          docker tag servitotal:test "$IMAGE:sha-$GITHUB_SHA"
+          docker tag servitotal:test "$IMAGE:latest"
+          docker push "$IMAGE:sha-$GITHUB_SHA"
+          docker push "$IMAGE:latest"
+          echo "image=$IMAGE:sha-$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+      - name: Detener contenedor de pruebas
+        if: always()
+        run: docker rm --force servitotal-ci || true
+
+  desplegar-render:
+    needs: verificar-publicar
+    if: >-
+      github.event_name != 'pull_request' &&
+      github.ref_name == github.event.repository.default_branch &&
+      vars.RENDER_CD_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Desplegar la imagen del commit y comprobar su estado en Render
+        env:
+          RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
+          RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
+          RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
+          DEPLOY_IMAGE: ${{ needs.verificar-publicar.outputs.image }}
+        run: node scripts/desplegar-render.mjs
+      - name: Comprobar panel y API publicados
+        env:
+          PUBLIC_URL: ${{ vars.RENDER_PUBLIC_URL }}
+        run: node scripts/comprobar-despliegue.mjs

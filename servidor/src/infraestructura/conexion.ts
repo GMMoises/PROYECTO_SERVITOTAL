@@ -27,6 +27,8 @@ export function obtenerPiscina(): pg.Pool {
     user: configuracion.usuario,
     password: configuracion.contrasena,
     max: configuracion.maxConexiones,
+    // Evita que readiness y peticiones queden esperando una BD inaccesible.
+    connectionTimeoutMillis: 3000,
   });
   piscina.on('error', (error) => {
     bitacora.error('Error inesperado en una conexion inactiva de la piscina', { detalle: String(error) });

@@ -1,0 +1,37 @@
+name: servitotal
+services:
+  postgres:
+    image: postgres:16-bookworm
+    environment:
+      POSTGRES_DB: servitotal
+      POSTGRES_USER: servitotal
+      POSTGRES_PASSWORD: ${DATABASE_PASSWORD:?Defina DATABASE_PASSWORD en .env}
+    volumes:
+      - postgres_datos:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U servitotal -d servitotal']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+  app:
+    image: servitotal:local
+    build: .
+    ports:
+      - '127.0.0.1:${APP_PORT:-8080}:3000'
+    environment:
+      DATABASE_HOST: postgres
+      DATABASE_PORT: '5432'
+      DATABASE_NAME: servitotal
+      DATABASE_USER: servitotal
+      DATABASE_PASSWORD: ${DATABASE_PASSWORD:?Defina DATABASE_PASSWORD en .env}
+      JWT_SECRET: ${JWT_SECRET:?Defina JWT_SECRET en .env}
+      PORT: '3000'
+    volumes:
+      - evidencias:/app/datos/evidencias
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+volumes:
+  postgres_datos:
+  evidencias:

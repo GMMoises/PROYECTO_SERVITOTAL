@@ -5,6 +5,8 @@
  * explicitas: aqui se montan, y es el unico punto donde se conocen entre si.
  */
 import express, { type Express } from 'express';
+import path from 'node:path';
+import { obtenerPiscina } from './infraestructura/conexion.js';
 import { asignarCorrelacion, crearExigirSesion } from './comun/autenticacion.js';
 import { manejarErrores, manejarRutaDesconocida } from './comun/manejador-errores.js';
 import { cargarUsuarioAutenticado } from './modulos/seguridad/servicio-autenticacion.js';
@@ -65,6 +67,15 @@ export function construirAplicacion(): Express {
     aplicacion.get(`${raiz}/salud`, (_peticion, respuesta) => {
       respuesta.json({ datos: { estado: 'disponible' } });
     });
+    aplicacion.get(`${raiz}/listo`, async (_peticion, respuesta) => {
+      try {
+        const consulta = { text: 'SELECT 1', query_timeout: 3000 };
+        await obtenerPiscina().query(consulta);
+        respuesta.json({ datos: { estado: 'listo' } });
+      } catch {
+        respuesta.status(503).json({ datos: { estado: 'no_disponible' } });
+      }
+    });
 
     aplicacion.use(raiz, rutasPublicasDeSeguridad());
     // El portal de consulta del cliente es publico a proposito: pedirle
@@ -93,6 +104,16 @@ export function construirAplicacion(): Express {
     aplicacion.use(raiz, exigirSesion, rutasDeReportes());
   }
 
+  // En el contenedor, API y panel comparten origen. En desarrollo sigue Vite.
+  const directorioPanel = process.env['PANEL_DIST'];
+  if (directorioPanel) {
+    const raizPanel = path.resolve(directorioPanel);
+    aplicacion.use(express.static(raizPanel));
+    // Las rutas desconocidas de la API nunca deben devolver el HTML del panel.
+    aplicacion.get(/^(?!\/api(?:\/|$)).*/, (_peticion, respuesta) => {
+      respuesta.sendFile(path.join(raizPanel, 'index.html'));
+    });
+  }
   aplicacion.use(manejarRutaDesconocida);
   aplicacion.use(manejarErrores);
 
