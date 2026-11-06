@@ -408,12 +408,19 @@ describe('conversion de ruta a taller', () => {
 });
 
 describe('agenda: la doble programacion es imposible', () => {
+  async function fechaSinVisitas(): Promise<string> {
+    const { rows } = await entorno.piscina.query<{ fecha: string }>(
+      "SELECT (GREATEST(CURRENT_DATE, MAX(fecha_programada)) + 1)::text AS fecha FROM visita",
+    );
+    return rows[0]!.fecha;
+  }
+
   it('dos visitas del mismo tecnico en la misma franja: la segunda falla', async () => {
     // Prueba 2 del pliego.
     const primera = await crearOrden({ modalidad: MODALIDAD_SERVICIO.RUTA });
     const segunda = await crearOrden({ modalidad: MODALIDAD_SERVICIO.RUTA });
     const idTec = await idTecnico('ruta');
-    const franja = { idTecnico: idTec, fechaProgramada: '2026-11-10', franjaHoraria: '13:00-15:00' };
+    const franja = { idTecnico: idTec, fechaProgramada: await fechaSinVisitas(), franjaHoraria: '13:00-15:00' };
 
     await peticion(entorno.aplicacion).post(`${RAIZ}/ordenes/${primera.id}/visitas`)
       .set(jefeTecnicos).send(franja).expect(201);
@@ -436,7 +443,7 @@ describe('agenda: la doble programacion es imposible', () => {
     const orden = await crearOrden({ modalidad: MODALIDAD_SERVICIO.RUTA });
     const otra = await crearOrden({ modalidad: MODALIDAD_SERVICIO.RUTA });
     const idTec = await idTecnico('ruta');
-    const franja = { idTecnico: idTec, fechaProgramada: '2026-11-11', franjaHoraria: '15:00-17:00' };
+    const franja = { idTecnico: idTec, fechaProgramada: await fechaSinVisitas(), franjaHoraria: '15:00-17:00' };
 
     await peticion(entorno.aplicacion).post(`${RAIZ}/ordenes/${orden.id}/visitas`)
       .set(jefeTecnicos).send(franja).expect(201);

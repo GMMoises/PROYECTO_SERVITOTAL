@@ -73,7 +73,7 @@ jobs:
         run: docker logs servitotal-ci || true
       - name: Publicar la misma imagen verificada en GHCR
         id: publicar
-        if: github.event_name != 'pull_request' && github.ref_name == github.event.repository.default_branch
+        if: github.event_name != 'pull_request' && github.ref_name == 'DOCKERCICD'
         env:
           GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -92,7 +92,7 @@ jobs:
     needs: verificar-publicar
     if: >-
       github.event_name != 'pull_request' &&
-      github.ref_name == github.event.repository.default_branch &&
+      github.ref_name == 'DOCKERCICD' &&
       vars.RENDER_CD_ENABLED == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -107,7 +107,7 @@ jobs:
           RENDER_DEPLOY_HOOK_URL: ${{ secrets.RENDER_DEPLOY_HOOK_URL }}
           RENDER_API_KEY: ${{ secrets.RENDER_API_KEY }}
           RENDER_SERVICE_ID: ${{ vars.RENDER_SERVICE_ID }}
-          DEPLOY_IMAGE: ${{ needs.verificar-publicar.outputs.image }}
+          DEPLOY_COMMIT: ${{ github.sha }}
         run: node scripts/desplegar-render.mjs
       - name: Comprobar panel y API publicados
         env:
