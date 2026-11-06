@@ -60,7 +60,7 @@ jobs:
       - name: Pruebas del panel
         run: npm run prueba:panel
       - name: Construir imagen
-        run: docker build --tag servitotal:test .
+        run: docker build --label "org.opencontainers.image.source=https://github.com/${{ github.repository }}" --tag servitotal:test .
       - name: Probar contenedor con migraciones y persistencia
         run: |
           docker run --detach --name servitotal-ci --network host \
