@@ -39,7 +39,7 @@ jobs:
       DATABASE_USER: postgres
       DATABASE_PASSWORD: postgres
       JWT_SECRET: clave-exclusiva-de-ci-no-utilizar-en-produccion-123456
-      ALMACEN_OBJETOS_RAIZ: ${{ runner.temp }}/evidencias
+      ALMACEN_OBJETOS_RAIZ: /tmp/servitotal-ci-evidencias
     outputs:
       image: ${{ steps.publicar.outputs.image }}
     steps:
